@@ -10,21 +10,22 @@ from aiogram.types import Message
 from openai import AsyncOpenAI
 
 
-load_dotenv()
+# =========================
+# ENV
+# =========================
 
+load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-
 
 print("BOT_TOKEN:", bool(BOT_TOKEN))
 print("GROQ_API_KEY:", bool(GROQ_API_KEY))
 
 
-bot = Bot(BOT_TOKEN)
-
-dp = Dispatcher()
-
+# =========================
+# GROQ CLIENT
+# =========================
 
 client = AsyncOpenAI(
     api_key=GROQ_API_KEY,
@@ -32,71 +33,155 @@ client = AsyncOpenAI(
 )
 
 
+# =========================
+# TELEGRAM
+# =========================
+
+bot = Bot(BOT_TOKEN)
+
+dp = Dispatcher()
+
+
+# =========================
+# ПАМЯТЬ
+# =========================
+
+users_started = set()
+
+chat_memory = {}
+
+
+# =========================
+# SYSTEM PROMPT
+# =========================
 
 SYSTEM_PROMPT = """
-Ты — профессиональный режиссер рекламы, кино и коротких видео.
+Ты — профессиональный режиссер, оператор-постановщик и монтажер.
 
 Ты помогаешь создавать:
 - Reels
 - TikTok
-- YouTube Shorts
+- Shorts
 - рекламные ролики
-- кинематографичные сцены
+- киношные сцены
+- YouTube видео
 
-Отвечай как режиссер-постановщик.
+По умолчанию считай:
+Съемка идет на iPhone.
+Если пользователь указал другую камеру — используй её.
 
-Учитывай:
-- сильный хук первых секунд
-- драматургию
-- композицию кадра
-- движение камеры
-- свет
-- звук
-- монтаж
+Твоя задача:
+Давать конкретный план действий для съемки.
 
-Если пользователь дает идею — развивай её в полноценный съемочный план.
+Не просто придумывай идею.
+Объясняй, как это реально снять.
 
 Структура ответа:
 
-🔥 Хук
+🎯 ЦЕЛЬ
+Что должно получиться.
 
-🎬 Сценарий
+🔥 ХУК (первые 3 секунды)
+Что сразу цепляет зрителя.
 
-📷 Раскадровка
+🎬 СЦЕНАРИЙ
+Пошагово:
+- действие
+- эмоция
+- развитие
 
-🎥 Камера и объектив
+📱 СЪЕМКА
+Укажи:
+- настройки iPhone
+- положение камеры
+- расстояние
+- движение камеры
+- свет
 
-💡 Свет
+📷 КАДРЫ
 
-🎙 Звук
+Кадр 1:
+План:
+Что происходит:
 
-🎞 Монтаж
+Кадр 2:
+План:
+Что происходит:
 
-Не давай общих советов. Давай конкретные решения для съемки.
+🎙 ЗВУК
+
+🎞 МОНТАЖ
+
+Всегда думай как режиссер на площадке.
+Не пиши общие советы.
+Давай конкретные действия.
 """
 
+
+# =========================
+# START
+# =========================
 
 @dp.message(CommandStart())
 async def start(message: Message):
 
-    await message.answer(
-        "🎬 ReelCinema AI\n\n"
-        "Я твой виртуальный режиссер.\n\n"
-        "Опиши идею ролика, сцену или задачу — "
-        "и я помогу её снять."
+    user_id = message.from_user.id
+
+    if user_id not in users_started:
+
+        users_started.add(user_id)
+
+        await message.answer(
+            "🎬 Добро пожаловать в ReelCinema AI.\n\n"
+            "Я твой виртуальный режиссер.\n\n"
+            "Помогу превратить идею в готовый план съемки:\n"
+            "🎥 сценарий\n"
+            "📷 кадры\n"
+            "💡 свет\n"
+            "🎙 звук\n"
+            "🎞 монтаж\n\n"
+            "По умолчанию считаем, что съемка идет на iPhone.\n\n"
+            "Расскажи свою идею 👇"
+        )
+
+    else:
+
+        await message.answer(
+            "🎬 ReelCinema AI снова готов.\n"
+            "Продолжаем работу 👇"
+        )
+
+
+
+# =========================
+# CHAT
+# =========================
+
+@dp.message(F.text)
+async def chat(message: Message):
+
+    user_id = message.from_user.id
+
+    user_text = message.text
+
+
+    if user_id not in chat_memory:
+        chat_memory[user_id] = []
+
+
+    chat_memory[user_id].append(
+        {
+            "role": "user",
+            "content": user_text
+        }
     )
 
 
+    # оставляем последние 10 сообщений
+    history = chat_memory[user_id][-10:]
 
-@dp.message(F.text)
-async def generate(message: Message):
 
     try:
-
-        await message.answer(
-            "🎬 Думаю как режиссер..."
-        )
-
 
         response = await client.chat.completions.create(
 
@@ -106,21 +191,26 @@ async def generate(message: Message):
                 {
                     "role": "system",
                     "content": SYSTEM_PROMPT
-                },
-                {
-                    "role": "user",
-                    "content": message.text
                 }
-            ],
+            ] + history,
 
-            temperature=0.8,
+            temperature=0.7,
             max_tokens=3000
         )
 
 
-        await message.answer(
-            response.choices[0].message.content
+        answer = response.choices[0].message.content
+
+
+        chat_memory[user_id].append(
+            {
+                "role": "assistant",
+                "content": answer
+            }
         )
+
+
+        await message.answer(answer)
 
 
     except Exception as e:
@@ -130,6 +220,9 @@ async def generate(message: Message):
         )
 
 
+# =========================
+# RUN
+# =========================
 
 async def main():
 
@@ -138,7 +231,5 @@ async def main():
     await dp.start_polling(bot)
 
 
-
 if __name__ == "__main__":
-
     asyncio.run(main())
