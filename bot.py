@@ -5,38 +5,26 @@ from dotenv import load_dotenv
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart
-from aiogram.types import (
-    Message,
-    ReplyKeyboardMarkup,
-    KeyboardButton
-)
-
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
+from aiogram.types import Message
 
 from openai import AsyncOpenAI
 
 
-# =========================
-# ENV
-# =========================
-
 load_dotenv()
+
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+
 
 print("BOT_TOKEN:", bool(BOT_TOKEN))
 print("GROQ_API_KEY:", bool(GROQ_API_KEY))
 
 
-# =========================
-# CLIENT
-# =========================
-
 bot = Bot(BOT_TOKEN)
 
 dp = Dispatcher()
+
 
 client = AsyncOpenAI(
     api_key=GROQ_API_KEY,
@@ -44,214 +32,64 @@ client = AsyncOpenAI(
 )
 
 
-# =========================
-# STATES
-# =========================
 
-class CinemaState(StatesGroup):
-    mode = State()
-    task = State()
+SYSTEM_PROMPT = """
+Ты — профессиональный режиссер рекламы, кино и коротких видео.
 
+Ты помогаешь создавать:
+- Reels
+- TikTok
+- YouTube Shorts
+- рекламные ролики
+- кинематографичные сцены
 
+Отвечай как режиссер-постановщик.
 
-# =========================
-# MENUS
-# =========================
-
-main_menu = ReplyKeyboardMarkup(
-    keyboard=[
-        [
-            KeyboardButton(text="🎬 Создать видео"),
-            KeyboardButton(text="💡 Придумать идею")
-        ],
-        [
-            KeyboardButton(text="📷 Помощь со съемкой"),
-            KeyboardButton(text="🎙 Работа с текстом")
-        ],
-        [
-            KeyboardButton(text="🛒 Реклама"),
-            KeyboardButton(text="📚 Мои проекты")
-        ]
-    ],
-    resize_keyboard=True
-)
-
-
-video_menu = ReplyKeyboardMarkup(
-    keyboard=[
-        [
-            KeyboardButton(text="🎥 Фильм"),
-            KeyboardButton(text="📱 Reels / Shorts")
-        ],
-        [
-            KeyboardButton(text="📺 YouTube"),
-            KeyboardButton(text="🎞 Сцена")
-        ],
-        [
-            KeyboardButton(text="⬅️ Назад")
-        ]
-    ],
-    resize_keyboard=True
-)
-
-
-shoot_menu = ReplyKeyboardMarkup(
-    keyboard=[
-        [
-            KeyboardButton(text="🎥 Камера"),
-            KeyboardButton(text="💡 Свет")
-        ],
-        [
-            KeyboardButton(text="🎬 Композиция"),
-            KeyboardButton(text="🎞 Движение камеры")
-        ],
-        [
-            KeyboardButton(text="⬅️ Назад")
-        ]
-    ],
-    resize_keyboard=True
-)
-
-
-# =========================
-# PROMPTS
-# =========================
-
-base_prompt = """
-Ты — ReelCinema AI.
-Ты профессиональный режиссер, оператор и сценарист.
-
-Отвечай как креативный директор кино.
-
-Всегда учитывай:
+Учитывай:
+- сильный хук первых секунд
 - драматургию
-- визуальный язык
-- композицию
+- композицию кадра
 - движение камеры
 - свет
 - звук
 - монтаж
 
-Давай конкретные решения, а не общие советы.
-"""
+Если пользователь дает идею — развивай её в полноценный съемочный план.
 
+Структура ответа:
 
-# =========================
-# START
-# =========================
-
-@dp.message(CommandStart())
-async def start(message: Message):
-
-    await message.answer(
-        "🎬 ReelCinema AI\n\n"
-        "Твой виртуальный режиссер.\n\n"
-        "Что будем делать?",
-        reply_markup=main_menu
-    )
-
-
-# =========================
-# MAIN MENU
-# =========================
-
-@dp.message(F.text=="🎬 Создать видео")
-async def create_video(message: Message, state:FSMContext):
-
-    await state.set_state(CinemaState.mode)
-
-    await message.answer(
-        "Что создаём?",
-        reply_markup=video_menu
-    )
-
-
-
-@dp.message(F.text=="📷 Помощь со съемкой")
-async def shooting(message: Message):
-
-    await message.answer(
-        "Что нужно разобрать?",
-        reply_markup=shoot_menu
-    )
-
-
-
-@dp.message(F.text=="⬅️ Назад")
-async def back(message: Message):
-
-    await message.answer(
-        "Главное меню:",
-        reply_markup=main_menu
-    )
-
-
-
-# =========================
-# QUICK MODES
-# =========================
-
-@dp.message(
-    F.text.in_([
-        "💡 Придумать идею",
-        "🎙 Работа с текстом",
-        "🛒 Реклама",
-        "📚 Мои проекты"
-    ])
-)
-async def quick_mode(message: Message, state:FSMContext):
-
-    await state.update_data(
-        mode=message.text
-    )
-
-    await message.answer(
-        f"{message.text}\n\n"
-        "Расскажи задачу:"
-    )
-
-
-
-# =========================
-# GENERATION
-# =========================
-
-@dp.message()
-async def generate(message: Message, state:FSMContext):
-
-    data = await state.get_data()
-
-    mode = data.get(
-        "mode",
-        "Создание видео"
-    )
-
-
-    prompt = f"""
-Режим:
-{mode}
-
-Запрос пользователя:
-{message.text}
-
-
-Создай результат в формате:
-
-🔥 Главная идея
+🔥 Хук
 
 🎬 Сценарий
 
-📷 Кадры
+📷 Раскадровка
 
-🎥 Камера
+🎥 Камера и объектив
 
 💡 Свет
 
 🎙 Звук
 
 🎞 Монтаж
+
+Не давай общих советов. Давай конкретные решения для съемки.
 """
 
+
+@dp.message(CommandStart())
+async def start(message: Message):
+
+    await message.answer(
+        "🎬 ReelCinema AI\n\n"
+        "Я твой виртуальный режиссер.\n\n"
+        "Опиши идею ролика, сцену или задачу — "
+        "и я помогу её снять."
+    )
+
+
+
+@dp.message(F.text)
+async def generate(message: Message):
 
     try:
 
@@ -266,12 +104,12 @@ async def generate(message: Message, state:FSMContext):
 
             messages=[
                 {
-                    "role":"system",
-                    "content":base_prompt
+                    "role": "system",
+                    "content": SYSTEM_PROMPT
                 },
                 {
-                    "role":"user",
-                    "content":prompt
+                    "role": "user",
+                    "content": message.text
                 }
             ],
 
@@ -288,14 +126,10 @@ async def generate(message: Message, state:FSMContext):
     except Exception as e:
 
         await message.answer(
-            f"Ошибка:\n{e}"
+            f"Ошибка генерации:\n{e}"
         )
 
 
-
-# =========================
-# RUN
-# =========================
 
 async def main():
 
