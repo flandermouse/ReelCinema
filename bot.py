@@ -6,35 +6,26 @@ from aiogram.filters import CommandStart
 from aiogram.types import Message
 from dotenv import load_dotenv
 
-from google import genai
+from openai import AsyncOpenAI
 
 
-# Загружаем переменные окружения
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-
-# Проверка переменных (увидишь в Railway Logs)
 print("BOT_TOKEN:", bool(BOT_TOKEN))
-print("GEMINI_API_KEY:", bool(GEMINI_API_KEY))
+print("GROQ_API_KEY:", bool(GROQ_API_KEY))
 
 
-if not BOT_TOKEN:
-    raise ValueError("Нет BOT_TOKEN")
-
-if not GEMINI_API_KEY:
-    raise ValueError("Нет GEMINI_API_KEY")
-
-
-# Telegram
-bot = Bot(token=BOT_TOKEN)
+bot = Bot(BOT_TOKEN)
 dp = Dispatcher()
 
 
-# Gemini
-client = genai.Client(api_key=GEMINI_API_KEY)
+client = AsyncOpenAI(
+    api_key=GROQ_API_KEY,
+    base_url="https://api.groq.com/openai/v1"
+)
 
 
 @dp.message(CommandStart())
@@ -42,7 +33,8 @@ async def start(message: Message):
     await message.answer(
         "🎬 Привет!\n\n"
         "Я ReelCinema AI.\n\n"
-        "Напиши продукт или идею — я придумаю рекламный ролик."
+        "Напиши продукт или идею, "
+        "и я придумаю рекламный ролик."
     )
 
 
@@ -50,44 +42,66 @@ async def start(message: Message):
 async def generate(message: Message):
     try:
 
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=f"""
-Ты профессиональный режиссер рекламы и сценарист.
+        response = await client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
 
-Пользователь хочет рекламный ролик:
+            messages=[
+                {
+                    "role": "system",
+                    "content": """
+Ты профессиональный режиссер рекламы,
+креативный директор и сценарист.
+
+Создавай идеи вирусных рекламных роликов
+для TikTok, Reels и YouTube Shorts.
+
+Думай как кинорежиссер:
+- сильный хук в первые секунды
+- эмоция
+- визуальные детали
+- камера
+- свет
+- монтаж
+"""
+                },
+
+                {
+                    "role": "user",
+                    "content": f"""
+Придумай рекламный ролик:
 
 {message.text}
 
-Создай идею в структуре:
+Структура ответа:
 
 🔥 Хук (первые 3 секунды)
 
-🎬 Сценарий ролика
+🎬 Сценарий
 
-📷 План кадров по секундам
+📷 План кадров
+(ракурс, движение камеры, свет)
 
-🎙 Текст диктора
+🎙 Озвучка
 
-🎨 Визуальный стиль и настроение
-
-Ответь на русском языке.
+🎨 Визуальный стиль
 """
+                }
+            ]
         )
 
-        await message.answer(response.text)
+
+        answer = response.choices[0].message.content
+
+        await message.answer(answer)
+
 
     except Exception as e:
-        print("GEMINI ERROR:", e)
         await message.answer(
             f"Ошибка генерации:\n{e}"
         )
 
 
 async def main():
-
-    print("🚀 ReelCinema AI запущен")
-
     await dp.start_polling(bot)
 
 
