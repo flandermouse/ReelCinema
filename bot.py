@@ -3,12 +3,13 @@ import asyncio
 
 from dotenv import load_dotenv
 
-from aiogram import Bot, Dispatcher, F
+from aiogram import Bot, Dispatcher
 from aiogram.filters import CommandStart
 from aiogram.types import Message
 
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.storage.memory import MemoryStorage
 
 from openai import AsyncOpenAI
 
@@ -27,7 +28,7 @@ print("GROQ_API_KEY:", bool(GROQ_API_KEY))
 
 
 # =========================
-# GROQ
+# GROQ CLIENT
 # =========================
 
 client = AsyncOpenAI(
@@ -42,15 +43,16 @@ client = AsyncOpenAI(
 
 bot = Bot(BOT_TOKEN)
 
-dp = Dispatcher()
+dp = Dispatcher(
+    storage=MemoryStorage()
+)
 
 
 # =========================
-# STATES
+# FSM STATES
 # =========================
 
 class FilmCreation(StatesGroup):
-
     idea = State()
     genre = State()
     hero = State()
@@ -58,17 +60,8 @@ class FilmCreation(StatesGroup):
     camera = State()
 
 
-
 # =========================
-# MEMORY START
-# =========================
-
-users_started = set()
-
-
-
-# =========================
-# PROMPT
+# SYSTEM PROMPT
 # =========================
 
 SYSTEM_PROMPT = """
@@ -76,36 +69,30 @@ SYSTEM_PROMPT = """
 Ты — ReelCinema AI.
 Ты профессиональный режиссер, сценарист и оператор-постановщик.
 
-Твоя задача — помочь человеку снять настоящий фильм,
-даже если у него только телефон и нет команды.
+Твоя задача — помочь новичку снять настоящий фильм самостоятельно.
 
-По умолчанию съемка идет на iPhone,
-если пользователь не указал другую камеру.
+По умолчанию съемка идет на iPhone.
 
-
-После получения идеи создай полноценный режиссерский пакет.
-
-
-Структура ответа:
-
+Создай подробный режиссерский пакет:
 
 🎬 НАЗВАНИЕ ФИЛЬМА
 
-
 🎭 ЖАНР
 
-
 📝 ЛОГЛАЙН
-О чем фильм в одном предложении.
+
+Короткая идея фильма.
 
 
 👤 ГЛАВНЫЙ ГЕРОЙ
+
 Кто он.
 Чего хочет.
 Чего боится.
+Его внутренний конфликт.
 
 
-🎞 СТРУКТУРА ИСТОРИИ
+🎞 СТРУКТУРА
 
 Акт 1:
 Завязка.
@@ -119,14 +106,13 @@ SYSTEM_PROMPT = """
 
 🎬 СЦЕНЫ
 
-
 Для каждой сцены:
 
-Название сцены:
-
-Задача сцены:
+Название:
 
 Локация:
+
+Задача сцены:
 
 Эмоция:
 
@@ -136,6 +122,7 @@ SYSTEM_PROMPT = """
 Кадр 1:
 - план
 - фокусное расстояние
+- положение камеры
 - движение камеры
 - композиция
 - свет
@@ -149,9 +136,9 @@ SYSTEM_PROMPT = """
 🎥 ОПЕРАТОРСКОЕ РЕШЕНИЕ
 
 Объясни:
-- почему камера стоит именно так
+- почему выбран такой кадр
 - как создать эмоцию
-- как удерживать внимание
+- как удерживать внимание зрителя
 
 
 ✂️ МОНТАЖ
@@ -160,30 +147,29 @@ SYSTEM_PROMPT = """
 - темп
 - паузы
 - переходы
-- моменты усиления напряжения
+- усиление напряжения
 
 
 🔊 ЗВУК
 
 Укажи:
 - музыку
-- атмосферу
 - шумы
+- атмосферу
 
 
-🎯 ПРИЕМЫ УДЕРЖАНИЯ ЗРИТЕЛЯ
+🎯 УДЕРЖАНИЕ ЗРИТЕЛЯ
 
 Объясни:
-- где создать вопрос
-- где дать ответ
-- где сделать поворот
+- какой вопрос должен возникнуть у зрителя
+- где раскрывать информацию
+- где делать поворот
 
 
 Пиши как настоящий режиссер.
-Не давай общие советы.
-Давай конкретный съемочный план.
+Не давай общих советов.
+Давай конкретный план съемки.
 """
-
 
 
 # =========================
@@ -191,41 +177,36 @@ SYSTEM_PROMPT = """
 # =========================
 
 @dp.message(CommandStart())
-async def start(message: Message):
+async def start(
+    message: Message,
+    state: FSMContext
+):
 
-    user_id = message.from_user.id
+    await state.clear()
 
+    await state.set_state(
+        FilmCreation.idea
+    )
 
-    if user_id not in users_started:
+    print(
+        "STATE:",
+        await state.get_state()
+    )
 
-        users_started.add(user_id)
-
-
-        await message.answer(
-            "🎬 Добро пожаловать в ReelCinema.\n\n"
-            "Я помогу превратить твою идею в настоящий фильм.\n\n"
-            "Мы создадим:\n"
-            "🎭 историю\n"
-            "🎬 сцены\n"
-            "📷 кадры\n"
-            "💡 свет\n"
-            "🔊 звук\n"
-            "✂️ монтаж\n\n"
-            "Начнем.\n\n"
-            "О чем будет твой фильм?"
-        )
-
-        await FilmCreation.idea.set()
-
-    else:
-
-        await message.answer(
-            "🎬 Продолжаем создавать фильм.\n\n"
-            "О чем новая идея?"
-        )
-
-        await FilmCreation.idea.set()
-
+    await message.answer(
+        "🎬 Добро пожаловать в ReelCinema.\n\n"
+        "Я помогу превратить твою идею в настоящий фильм.\n\n"
+        "Мы создадим:\n"
+        "🎭 историю\n"
+        "🎬 сцены\n"
+        "📷 кадры\n"
+        "💡 свет\n"
+        "🔊 звук\n"
+        "✂️ монтаж\n\n"
+        "По умолчанию снимаем на iPhone.\n\n"
+        "Начнем.\n\n"
+        "О чем будет твой фильм?"
+    )
 
 
 # =========================
@@ -238,6 +219,8 @@ async def get_idea(
     state: FSMContext
 ):
 
+    print("IDEA:", message.text)
+
     await state.update_data(
         idea=message.text
     )
@@ -246,14 +229,15 @@ async def get_idea(
         FilmCreation.genre
     )
 
-
     await message.answer(
         "Отлично.\n\n"
         "Какой жанр?\n\n"
         "Например:\n"
-        "драма, хоррор, триллер, комедия, фантастика"
+        "драма\n"
+        "хоррор\n"
+        "триллер\n"
+        "фантастика"
     )
-
 
 
 # =========================
@@ -263,23 +247,20 @@ async def get_idea(
 @dp.message(FilmCreation.genre)
 async def get_genre(
     message: Message,
-    state:FSMContext
+    state: FSMContext
 ):
 
     await state.update_data(
         genre=message.text
     )
 
-
     await state.set_state(
         FilmCreation.hero
     )
 
-
     await message.answer(
         "Кто главный герой?"
     )
-
 
 
 # =========================
@@ -289,18 +270,16 @@ async def get_genre(
 @dp.message(FilmCreation.hero)
 async def get_hero(
     message: Message,
-    state:FSMContext
+    state: FSMContext
 ):
 
     await state.update_data(
         hero=message.text
     )
 
-
     await state.set_state(
         FilmCreation.format
     )
-
 
     await message.answer(
         "Какой формат фильма?\n\n"
@@ -311,7 +290,6 @@ async def get_hero(
     )
 
 
-
 # =========================
 # FORMAT
 # =========================
@@ -319,24 +297,21 @@ async def get_hero(
 @dp.message(FilmCreation.format)
 async def get_format(
     message: Message,
-    state:FSMContext
+    state: FSMContext
 ):
 
     await state.update_data(
         format=message.text
     )
 
-
     await state.set_state(
         FilmCreation.camera
     )
 
-
     await message.answer(
         "На что снимаем?\n\n"
-        "Если ничего не указать — считаем iPhone."
+        "Если ничего нет — напиши iPhone."
     )
-
 
 
 # =========================
@@ -346,43 +321,39 @@ async def get_format(
 @dp.message(FilmCreation.camera)
 async def generate(
     message: Message,
-    state:FSMContext
+    state: FSMContext
 ):
 
     await state.update_data(
         camera=message.text
     )
 
-
     data = await state.get_data()
-
 
     await message.answer(
         "🎬 Создаю режиссерский пакет фильма..."
     )
 
-
-    prompt=f"""
+    prompt = f"""
 
 Создай фильм.
 
 Идея:
-{data['idea']}
+{data.get('idea')}
 
 Жанр:
-{data['genre']}
+{data.get('genre')}
 
 Главный герой:
-{data['hero']}
+{data.get('hero')}
 
 Формат:
-{data['format']}
+{data.get('format')}
 
 Камера:
-{data['camera']}
+{data.get('camera')}
 
-
-Создай подробный план съемки.
+Сделай подробный съемочный план.
 """
 
 
@@ -394,29 +365,33 @@ async def generate(
 
             messages=[
                 {
-                    "role":"system",
-                    "content":SYSTEM_PROMPT
+                    "role": "system",
+                    "content": SYSTEM_PROMPT
                 },
                 {
-                    "role":"user",
-                    "content":prompt
+                    "role": "user",
+                    "content": prompt
                 }
             ],
 
             temperature=0.8,
-            max_tokens=5000
+            max_tokens=4500
         )
 
 
-        await message.answer(
-            response.choices[0].message.content
-        )
+        answer = response.choices[0].message.content
+
+
+        for i in range(0, len(answer), 4000):
+            await message.answer(
+                answer[i:i+4000]
+            )
 
 
     except Exception as e:
 
         await message.answer(
-            f"Ошибка:\n{e}"
+            f"Ошибка генерации:\n{e}"
         )
 
 
@@ -424,6 +399,8 @@ async def generate(
 
 
 
+# =========================
+# RUN
 # =========================
 
 async def main():
@@ -433,7 +410,5 @@ async def main():
     await dp.start_polling(bot)
 
 
-
-if __name__=="__main__":
-
+if __name__ == "__main__":
     asyncio.run(main())
