@@ -17,21 +17,26 @@ from aiogram.fsm.state import State, StatesGroup
 from openai import AsyncOpenAI
 
 
-load_dotenv()
+# =========================
+# ENV
+# =========================
 
+load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-
 
 print("BOT_TOKEN:", bool(BOT_TOKEN))
 print("GROQ_API_KEY:", bool(GROQ_API_KEY))
 
 
+# =========================
+# CLIENT
+# =========================
+
 bot = Bot(BOT_TOKEN)
 
 dp = Dispatcher()
-
 
 client = AsyncOpenAI(
     api_key=GROQ_API_KEY,
@@ -39,296 +44,258 @@ client = AsyncOpenAI(
 )
 
 
-# =====================
-# СОСТОЯНИЯ
-# =====================
+# =========================
+# STATES
+# =========================
 
-class ReelForm(StatesGroup):
-
+class CinemaState(StatesGroup):
     mode = State()
-    camera = State()
-    device = State()
-    product = State()
-    style = State()
-    platform = State()
+    task = State()
 
 
 
-# =====================
-# КЛАВИАТУРЫ
-# =====================
+# =========================
+# MENUS
+# =========================
 
-
-start_keyboard = ReplyKeyboardMarkup(
+main_menu = ReplyKeyboardMarkup(
     keyboard=[
         [
-            KeyboardButton(text="🎬 Создать ролик")
-        ]
-    ],
-    resize_keyboard=True
-)
-
-
-camera_keyboard = ReplyKeyboardMarkup(
-    keyboard=[
-        [
-            KeyboardButton(text="📱 Телефон"),
-            KeyboardButton(text="📷 Камера")
-        ]
-    ],
-    resize_keyboard=True
-)
-
-
-style_keyboard = ReplyKeyboardMarkup(
-    keyboard=[
-        [
-            KeyboardButton(text="😱 Хоррор"),
-            KeyboardButton(text="🎬 Кино")
+            KeyboardButton(text="🎬 Создать видео"),
+            KeyboardButton(text="💡 Придумать идею")
         ],
         [
-            KeyboardButton(text="✨ Премиум"),
-            KeyboardButton(text="😂 Комедия")
-        ]
-    ],
-    resize_keyboard=True
-)
-
-
-platform_keyboard = ReplyKeyboardMarkup(
-    keyboard=[
-        [
-            KeyboardButton(text="TikTok"),
-            KeyboardButton(text="Reels")
+            KeyboardButton(text="📷 Помощь со съемкой"),
+            KeyboardButton(text="🎙 Работа с текстом")
         ],
         [
-            KeyboardButton(text="YouTube Shorts")
+            KeyboardButton(text="🛒 Реклама"),
+            KeyboardButton(text="📚 Мои проекты")
         ]
     ],
     resize_keyboard=True
 )
 
 
+video_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [
+            KeyboardButton(text="🎥 Фильм"),
+            KeyboardButton(text="📱 Reels / Shorts")
+        ],
+        [
+            KeyboardButton(text="📺 YouTube"),
+            KeyboardButton(text="🎞 Сцена")
+        ],
+        [
+            KeyboardButton(text="⬅️ Назад")
+        ]
+    ],
+    resize_keyboard=True
+)
 
-# =====================
+
+shoot_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [
+            KeyboardButton(text="🎥 Камера"),
+            KeyboardButton(text="💡 Свет")
+        ],
+        [
+            KeyboardButton(text="🎬 Композиция"),
+            KeyboardButton(text="🎞 Движение камеры")
+        ],
+        [
+            KeyboardButton(text="⬅️ Назад")
+        ]
+    ],
+    resize_keyboard=True
+)
+
+
+# =========================
+# PROMPTS
+# =========================
+
+base_prompt = """
+Ты — ReelCinema AI.
+Ты профессиональный режиссер, оператор и сценарист.
+
+Отвечай как креативный директор кино.
+
+Всегда учитывай:
+- драматургию
+- визуальный язык
+- композицию
+- движение камеры
+- свет
+- звук
+- монтаж
+
+Давай конкретные решения, а не общие советы.
+"""
+
+
+# =========================
 # START
-# =====================
-
+# =========================
 
 @dp.message(CommandStart())
 async def start(message: Message):
 
     await message.answer(
         "🎬 ReelCinema AI\n\n"
-        "Я помогу создать рекламный ролик.\n\n"
-        "Начинаем?",
-        reply_markup=start_keyboard
+        "Твой виртуальный режиссер.\n\n"
+        "Что будем делать?",
+        reply_markup=main_menu
     )
 
 
+# =========================
+# MAIN MENU
+# =========================
 
-# =====================
-# НАЧАЛО
-# =====================
+@dp.message(F.text=="🎬 Создать видео")
+async def create_video(message: Message, state:FSMContext):
 
-
-@dp.message(F.text=="🎬 Создать ролик")
-async def create(message: Message, state:FSMContext):
-
-    await state.set_state(ReelForm.camera)
+    await state.set_state(CinemaState.mode)
 
     await message.answer(
-        "На что снимаем?",
-        reply_markup=camera_keyboard
+        "Что создаём?",
+        reply_markup=video_menu
     )
 
 
 
-# =====================
-# КАМЕРА
-# =====================
-
-
-@dp.message(ReelForm.camera)
-async def camera(message:Message, state:FSMContext):
-
-    await state.update_data(
-        camera_type=message.text
-    )
-
-
-    await state.set_state(ReelForm.device)
-
+@dp.message(F.text=="📷 Помощь со съемкой")
+async def shooting(message: Message):
 
     await message.answer(
-        "Напиши модель камеры или телефона.\n\n"
-        "Например:\n"
-        "Sony ZV-E10 + Viltrox 35mm"
+        "Что нужно разобрать?",
+        reply_markup=shoot_menu
     )
 
 
 
-# =====================
-# МОДЕЛЬ
-# =====================
-
-
-@dp.message(ReelForm.device)
-async def device(message:Message,state:FSMContext):
-
-    await state.update_data(
-        device=message.text
-    )
-
-
-    await state.set_state(ReelForm.product)
-
+@dp.message(F.text=="⬅️ Назад")
+async def back(message: Message):
 
     await message.answer(
-        "Что рекламируем?"
+        "Главное меню:",
+        reply_markup=main_menu
     )
 
 
 
-# =====================
-# ПРОДУКТ
-# =====================
+# =========================
+# QUICK MODES
+# =========================
 
-
-@dp.message(ReelForm.product)
-async def product(message:Message,state:FSMContext):
+@dp.message(
+    F.text.in_([
+        "💡 Придумать идею",
+        "🎙 Работа с текстом",
+        "🛒 Реклама",
+        "📚 Мои проекты"
+    ])
+)
+async def quick_mode(message: Message, state:FSMContext):
 
     await state.update_data(
-        product=message.text
+        mode=message.text
     )
-
-    await state.set_state(ReelForm.style)
-
 
     await message.answer(
-        "Выбери стиль:",
-        reply_markup=style_keyboard
+        f"{message.text}\n\n"
+        "Расскажи задачу:"
     )
 
 
 
-# =====================
-# СТИЛЬ
-# =====================
+# =========================
+# GENERATION
+# =========================
 
-
-@dp.message(ReelForm.style)
-async def style(message:Message,state:FSMContext):
-
-    await state.update_data(
-        style=message.text
-    )
-
-    await state.set_state(ReelForm.platform)
-
-
-    await message.answer(
-        "Где будет ролик?",
-        reply_markup=platform_keyboard
-    )
-
-
-
-# =====================
-# ФИНАЛ
-# =====================
-
-
-@dp.message(ReelForm.platform)
-async def platform(message:Message,state:FSMContext):
-
-    await state.update_data(
-        platform=message.text
-    )
-
+@dp.message()
+async def generate(message: Message, state:FSMContext):
 
     data = await state.get_data()
 
-
-    prompt=f"""
-Ты профессиональный режиссер рекламы.
-
-Создай рекламный ролик.
-
-Данные:
-
-Камера:
-{data['device']}
-
-Тип съемки:
-{data['camera_type']}
-
-Продукт:
-{data['product']}
-
-Стиль:
-{data['style']}
-
-Платформа:
-{data['platform']}
+    mode = data.get(
+        "mode",
+        "Создание видео"
+    )
 
 
-Ответ:
+    prompt = f"""
+Режим:
+{mode}
 
-🔥 Хук первые 3 секунды
+Запрос пользователя:
+{message.text}
+
+
+Создай результат в формате:
+
+🔥 Главная идея
 
 🎬 Сценарий
 
-📷 Раскадровка:
-- план
-- объектив
-- движение камеры
-- свет
+📷 Кадры
 
-🎙 Озвучка
+🎥 Камера
 
-🎨 Цвет и стиль
+💡 Свет
+
+🎙 Звук
 
 🎞 Монтаж
 """
 
 
-    await message.answer(
-        "🎬 Создаю режиссерский план..."
-    )
+    try:
+
+        await message.answer(
+            "🎬 Думаю как режиссер..."
+        )
 
 
-    response = await client.chat.completions.create(
+        response = await client.chat.completions.create(
 
-        model="llama-3.3-70b-versatile",
+            model="llama-3.3-70b-versatile",
 
-        messages=[
-            {
-                "role":"system",
-                "content":
-                "Ты лучший режиссер рекламных роликов."
-            },
-            {
-                "role":"user",
-                "content":prompt
-            }
-        ],
+            messages=[
+                {
+                    "role":"system",
+                    "content":base_prompt
+                },
+                {
+                    "role":"user",
+                    "content":prompt
+                }
+            ],
 
-        max_tokens=3000
-    )
-
-
-    await message.answer(
-        response.choices[0].message.content
-    )
+            temperature=0.8,
+            max_tokens=3000
+        )
 
 
-    await state.clear()
+        await message.answer(
+            response.choices[0].message.content
+        )
+
+
+    except Exception as e:
+
+        await message.answer(
+            f"Ошибка:\n{e}"
+        )
 
 
 
-# =====================
-
+# =========================
+# RUN
+# =========================
 
 async def main():
 
@@ -338,6 +305,6 @@ async def main():
 
 
 
-if __name__=="__main__":
+if __name__ == "__main__":
 
     asyncio.run(main())
