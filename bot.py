@@ -5,14 +5,10 @@ from dotenv import load_dotenv
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart
-from aiogram.types import Message
+from aiogram.types import Message, KeyboardButton, ReplyKeyboardMarkup
 
 from openai import AsyncOpenAI
 
-
-# =========================
-# ENV
-# =========================
 
 load_dotenv()
 
@@ -23,9 +19,9 @@ print("BOT_TOKEN:", bool(BOT_TOKEN))
 print("GROQ_API_KEY:", bool(GROQ_API_KEY))
 
 
-# =========================
-# GROQ CLIENT
-# =========================
+bot = Bot(BOT_TOKEN)
+dp = Dispatcher()
+
 
 client = AsyncOpenAI(
     api_key=GROQ_API_KEY,
@@ -34,45 +30,93 @@ client = AsyncOpenAI(
 
 
 # =========================
-# TELEGRAM
+# СОСТОЯНИЕ РЕЖИМА
 # =========================
 
-bot = Bot(BOT_TOKEN)
-
-dp = Dispatcher()
+user_modes = {}
 
 
 # =========================
-# SYSTEM PROMPT
+# КНОПКИ
 # =========================
 
-SYSTEM_PROMPT = """
-Ты — профессиональный режиссер рекламы, сценарист и оператор-постановщик.
+menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [
+            KeyboardButton(text="🎬 Реклама"),
+            KeyboardButton(text="💡 Идея ролика")
+        ],
+        [
+            KeyboardButton(text="📷 Раскадровка"),
+            KeyboardButton(text="🎙 Озвучка")
+        ]
+    ],
+    resize_keyboard=True
+)
 
-Твоя специализация:
-- вирусные ролики TikTok / Reels / Shorts
-- рекламные видео с киношной атмосферой
-- хоррор, триллер, эмоциональные хуки
-- постановка сцен
 
-Отвечай как креативный директор.
+# =========================
+# ПРОМПТЫ
+# =========================
 
-Когда пользователь дает идею:
-1. Усиливай хук первых 3 секунд.
-2. Предлагай конкретные кадры.
-3. Указывай:
-   - план камеры
-   - движение камеры
-   - объектив
-   - свет
-   - композицию
-   - звук
-   - монтаж
-4. Думай как режиссер, а не как копирайтер.
+prompts = {
 
-Не пиши банальные советы.
-Давай конкретные съемочные решения.
+"🎬 Реклама": """
+Ты креативный директор рекламных роликов.
+
+Создай продающий рекламный ролик.
+
+Структура:
+🔥 Хук первые 3 секунды
+🎬 Сценарий
+📷 Кадры
+🎥 Камера и движение
+💡 Свет
+🎙 Озвучка
+🎨 Визуальный стиль
+
+Думай как режиссер рекламы.
+""",
+
+
+"💡 Идея ролика": """
+Ты генератор вирусных идей для Reels и TikTok.
+
+Придумай 5 сильных идей.
+
+Для каждой:
+- хук
+- конфликт
+- эмоция
+- финальный твист
+""",
+
+
+"📷 Раскадровка": """
+Ты профессиональный оператор-постановщик.
+
+Сделай раскадровку.
+
+Для каждого кадра укажи:
+- план
+- объектив
+- движение камеры
+- композицию
+- свет
+- звук
+""",
+
+
+"🎙 Озвучка": """
+Ты сценарист рекламной озвучки.
+
+Создай:
+- текст диктора
+- интонацию
+- паузы
+- эмоциональную подачу
 """
+}
 
 
 # =========================
@@ -81,35 +125,60 @@ SYSTEM_PROMPT = """
 
 @dp.message(CommandStart())
 async def start(message: Message):
+
     await message.answer(
-        "🎬 Я твой AI-режиссер.\n\n"
-        "Напиши идею ролика — помогу сделать сценарий, кадры и постановку."
+        "🎬 ReelCinema AI\n\n"
+        "Выбери режим создания:",
+        reply_markup=menu
     )
 
 
 # =========================
-# CHAT
+# ВЫБОР РЕЖИМА
+# =========================
+
+@dp.message(F.text.in_(prompts.keys()))
+async def choose_mode(message: Message):
+
+    user_modes[message.from_user.id] = message.text
+
+    await message.answer(
+        f"Выбран режим: {message.text}\n\n"
+        "Теперь напиши продукт или идею."
+    )
+
+
+# =========================
+# ГЕНЕРАЦИЯ
 # =========================
 
 @dp.message(F.text)
-async def chat(message: Message):
+async def generate(message: Message):
 
-    user_text = message.text
+    mode = user_modes.get(
+        message.from_user.id,
+        "🎬 Реклама"
+    )
+
 
     try:
 
         response = await client.chat.completions.create(
+
             model="llama-3.3-70b-versatile",
 
             messages=[
+
                 {
                     "role": "system",
-                    "content": SYSTEM_PROMPT
+                    "content": prompts[mode]
                 },
+
                 {
                     "role": "user",
-                    "content": user_text
+                    "content": message.text
                 }
+
             ],
 
             temperature=0.8,
@@ -117,16 +186,15 @@ async def chat(message: Message):
         )
 
 
-        answer = response.choices[0].message.content
-
-
-        await message.answer(answer)
+        await message.answer(
+            response.choices[0].message.content
+        )
 
 
     except Exception as e:
 
         await message.answer(
-            f"Ошибка генерации:\n{e}"
+            f"Ошибка:\n{e}"
         )
 
 
@@ -136,7 +204,7 @@ async def chat(message: Message):
 
 async def main():
 
-    print("Бот запущен")
+    print("ReelCinema запущен")
 
     await dp.start_polling(bot)
 
