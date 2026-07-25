@@ -51,7 +51,7 @@ async def generate(message: Message):
     try:
 
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-2.0-flash",
             contents=f"""
 Ты профессиональный режиссер рекламы и сценарист.
 
